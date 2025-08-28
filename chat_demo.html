@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Receptionist Chat Demo</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        
+        .chat-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        
+        .chat-header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+        }
+        
+        .chat-header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        .chat-header p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+        }
+        
+        .chat-messages {
+            height: 400px;
+            overflow-y: auto;
+            padding: 20px;
+            background: #f8f9fa;
+        }
+        
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .message.user {
+            justify-content: flex-end;
+        }
+        
+        .message.assistant {
+            justify-content: flex-start;
+        }
+        
+        .message-content {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+        
+        .message.user .message-content {
+            background: #007bff;
+            color: white;
+        }
+        
+        .message.assistant .message-content {
+            background: white;
+            color: #333;
+            border: 1px solid #e9ecef;
+        }
+        
+        .message-input {
+            display: flex;
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e9ecef;
+        }
+        
+        .message-input input {
+            flex: 1;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 25px;
+            font-size: 16px;
+            outline: none;
+            transition: border-color 0.3s;
+        }
+        
+        .message-input input:focus {
+            border-color: #007bff;
+        }
+        
+        .message-input button {
+            margin-left: 10px;
+            padding: 12px 24px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background 0.3s;
+        }
+        
+        .message-input button:hover {
+            background: #0056b3;
+        }
+        
+        .message-input button:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        
+        .typing-indicator {
+            display: none;
+            padding: 12px 16px;
+            background: white;
+            border: 1px solid #e9ecef;
+            border-radius: 18px;
+            color: #666;
+            font-style: italic;
+        }
+        
+        .session-info {
+            background: #e9ecef;
+            padding: 10px 20px;
+            text-align: center;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+        
+        .success {
+            background: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="chat-container">
+        <div class="chat-header">
+            <h1>🏨 Hotel Receptionist AI</h1>
+            <p>Your intelligent hotel assistant is ready to help!</p>
+        </div>
+        
+        <div class="session-info" id="sessionInfo">
+            Starting new chat session...
+        </div>
+        
+        <div class="chat-messages" id="chatMessages">
+            <div class="message assistant">
+                <div class="message-content">
+                    Hello! Welcome to our luxury hotel. I'm your AI receptionist, ready to help you with room bookings, check-ins, amenities, and any other questions you might have. How can I assist you today?
+                </div>
+            </div>
+        </div>
+        
+        <div class="typing-indicator" id="typingIndicator">
+            AI is typing...
+        </div>
+        
+        <div class="message-input">
+            <input type="text" id="messageInput" placeholder="Type your message here..." maxlength="500">
+            <button id="sendButton" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+
+    <script>
+        let sessionId = null;
+        let isStreaming = false;
+
+        // Initialize chat session
+        async function initializeChat() {
+            try {
+                const response = await fetch('/api/v1/streaming-chat/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                sessionId = data.session_id;
+                document.getElementById('sessionInfo').textContent = `Session ID: ${sessionId}`;
+                
+                // Add success message
+                addMessage('Session started successfully! You can now chat with the AI receptionist.', 'assistant');
+                
+            } catch (error) {
+                console.error('Failed to start chat session:', error);
+                document.getElementById('sessionInfo').textContent = 'Failed to start session';
+                addMessage('Sorry, I encountered an error starting the chat session. Please refresh the page and try again.', 'assistant');
+            }
+        }
+
+        // Send message function
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const button = document.getElementById('sendButton');
+            const message = input.value.trim();
+            
+            if (!message || isStreaming) return;
+            
+            // Clear input and disable button
+            input.value = '';
+            button.disabled = true;
+            isStreaming = true;
+            
+            // Add user message
+            addMessage(message, 'user');
+            
+            // Show typing indicator
+            document.getElementById('typingIndicator').style.display = 'block';
+            
+            try {
+                if (sessionId) {
+                    // Use streaming endpoint
+                    await streamResponse(message);
+                } else {
+                    // Fallback to regular endpoint
+                    await sendRegularMessage(message);
+                }
+            } catch (error) {
+                console.error('Error sending message:', error);
+                addMessage('Sorry, I encountered an error. Please try again.', 'assistant');
+            } finally {
+                // Hide typing indicator and re-enable button
+                document.getElementById('typingIndicator').style.display = 'none';
+                button.disabled = false;
+                isStreaming = false;
+                input.focus();
+            }
+        }
+
+        // Stream response function
+        async function streamResponse(message) {
+            const response = await fetch('/api/v1/streaming-chat/message/stream', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: sessionId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let assistantMessage = '';
+            let messageElement = null;
+
+            try {
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                
+                                if (data.type === 'start') {
+                                    // Create message element for streaming
+                                    messageElement = addMessage('', 'assistant');
+                                } else if (data.type === 'chunk') {
+                                    // Add content to the message
+                                    assistantMessage += data.content;
+                                    if (messageElement) {
+                                        messageElement.querySelector('.message-content').textContent = assistantMessage;
+                                    }
+                                } else if (data.type === 'complete') {
+                                    // Streaming complete
+                                    break;
+                                } else if (data.type === 'error') {
+                                    addMessage(`Error: ${data.content}`, 'assistant');
+                                    break;
+                                }
+                            } catch (e) {
+                                console.error('Error parsing SSE data:', e);
+                            }
+                        }
+                    }
+                }
+            } finally {
+                reader.releaseLock();
+            }
+        }
+
+        // Fallback to regular message endpoint
+        async function sendRegularMessage(message) {
+            const response = await fetch('/api/v1/streaming-chat/message', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    message: message,
+                    session_id: sessionId
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const data = await response.json();
+            addMessage(data.message, 'assistant');
+        }
+
+        // Add message to chat
+        function addMessage(content, type) {
+            const messagesContainer = document.getElementById('chatMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            
+            const contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+            contentDiv.textContent = content;
+            
+            messageDiv.appendChild(contentDiv);
+            messagesContainer.appendChild(messageDiv);
+            
+            // Scroll to bottom
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            
+            return messageDiv;
+        }
+
+        // Handle Enter key
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        // Initialize chat when page loads
+        window.addEventListener('load', initializeChat);
+    </script>
+</body>
+</html> 

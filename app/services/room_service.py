@@ -144,4 +144,8 @@ class RoomService:
                 status_code=404,
                 detail="Room not found"
             )
-        return RoomResponse.model_validate(room) 
+        return RoomResponse.model_validate(room)
+
+    async def get_room_by_number(self, db: AsyncSession, room_number: str) -> Optional[Room]:
+        """Get a room by room number"""
+        return await self.repository.get_by_room_number(db, room_number) 

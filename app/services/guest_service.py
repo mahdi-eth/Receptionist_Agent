@@ -124,4 +124,8 @@ class GuestService:
             total=total,
             page=skip // limit + 1,
             size=limit
-        ) 
+        )
+
+    async def get_guest_by_email(self, db: AsyncSession, email: str) -> Optional[Guest]:
+        """Get a guest by email"""
+        return await self.repository.get_by_email(db, email) 

@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     qdrant_url: str = "http://localhost:6333"
     qdrant_api_key: Optional[str] = None
     
+    # Gemini AI Configuration
+    gemini_api_key: Optional[str] = None
+    
     class Config:
         env_file = ".env"
         case_sensitive = False

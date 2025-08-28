@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import async_engine
-from app.controllers import guest_router, room_router, reservation_router
+from app.controllers import guest_router, room_router, reservation_router, chat_router, streaming_chat_router
 
 
 @asynccontextmanager
@@ -87,6 +87,8 @@ async def root():
 app.include_router(guest_router, prefix="/api/v1")
 app.include_router(room_router, prefix="/api/v1")
 app.include_router(reservation_router, prefix="/api/v1")
+app.include_router(chat_router, prefix="/api/v1")
+app.include_router(streaming_chat_router, prefix="/api/v1")
 
 # System-wide SSE endpoint
 @app.get("/api/v1/sse/system-updates", tags=["SSE - Real-time Updates"], include_in_schema=True)
