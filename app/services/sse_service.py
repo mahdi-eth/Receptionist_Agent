@@ -1,175 +1,196 @@
 import asyncio
 import json
-from typing import Dict, Set, Any
-from datetime import datetime
+from typing import Dict, Set, Optional
 from sse_starlette.sse import EventSourceResponse
 from app.schemas.guest import GuestResponse
-from app.schemas.reservation import ReservationWithDetails
+from app.schemas.reservation import ReservationResponse
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SSEService:
+    """Service for managing Server-Sent Events (SSE) connections"""
+    
     def __init__(self):
-        self.guest_subscribers: Set[str] = set()
-        self.reservation_subscribers: Dict[int, Set[str]] = {}  # guest_id -> set of subscriber_ids
-        
-    def generate_subscriber_id(self) -> str:
-        """Generate a unique subscriber ID"""
-        import uuid
-        return str(uuid.uuid4())
+        self.connections: Set[asyncio.Queue] = set()
+        self.guest_connections: Dict[int, Set[asyncio.Queue]] = {}
+        self.reservation_connections: Dict[int, Set[asyncio.Queue]] = {}
     
-    async def subscribe_to_guests(self) -> EventSourceResponse:
-        """Subscribe to guest updates"""
-        subscriber_id = self.generate_subscriber_id()
-        self.guest_subscribers.add(subscriber_id)
+    async def add_connection(self, queue: asyncio.Queue):
+        """Add a new SSE connection"""
+        self.connections.add(queue)
+        logger.info(f"Added SSE connection, total connections: {len(self.connections)}")
+    
+    async def remove_connection(self, queue: asyncio.Queue):
+        """Remove an SSE connection"""
+        self.connections.discard(queue)
+        logger.info(f"Removed SSE connection, total connections: {len(self.connections)}")
+    
+    async def add_guest_connection(self, guest_id: int, queue: asyncio.Queue):
+        """Add a new SSE connection for a specific guest"""
+        if guest_id not in self.guest_connections:
+            self.guest_connections[guest_id] = set()
+        self.guest_connections[guest_id].add(queue)
+        logger.info(f"Added guest SSE connection for guest {guest_id}")
+    
+    async def remove_guest_connection(self, guest_id: int, queue: asyncio.Queue):
+        """Remove an SSE connection for a specific guest"""
+        if guest_id in self.guest_connections:
+            self.guest_connections[guest_id].discard(queue)
+            if not self.guest_connections[guest_id]:
+                del self.guest_connections[guest_id]
+        logger.info(f"Removed guest SSE connection for guest {guest_id}")
+    
+    async def add_reservation_connection(self, guest_id: int, queue: asyncio.Queue):
+        """Add a new SSE connection for reservation updates for a specific guest"""
+        if guest_id not in self.reservation_connections:
+            self.reservation_connections[guest_id] = set()
+        self.reservation_connections[guest_id].add(queue)
+        logger.info(f"Added reservation SSE connection for guest {guest_id}")
+    
+    async def remove_reservation_connection(self, guest_id: int, queue: asyncio.Queue):
+        """Remove an SSE connection for reservation updates for a specific guest"""
+        if guest_id in self.reservation_connections:
+            self.reservation_connections[guest_id].discard(queue)
+            if not self.reservation_connections[guest_id]:
+                del self.reservation_connections[guest_id]
+        logger.info(f"Removed reservation SSE connection for guest {guest_id}")
+    
+    async def broadcast_guest_created(self, guest: GuestResponse):
+        """Broadcast guest creation event to all connections"""
+        event_data = {
+            "type": "guest_created",
+            "data": guest.model_dump()
+        }
         
-        async def event_generator():
+        # Broadcast to all general connections
+        await self._broadcast_to_connections(self.connections, event_data)
+        
+        # Broadcast to guest-specific connections
+        if guest.id in self.guest_connections:
+            await self._broadcast_to_connections(self.guest_connections[guest.id], event_data)
+    
+    async def broadcast_guest_updated(self, guest: GuestResponse):
+        """Broadcast guest update event to all connections"""
+        event_data = {
+            "type": "guest_updated",
+            "data": guest.model_dump()
+        }
+        
+        # Broadcast to all general connections
+        await self._broadcast_to_connections(self.connections, event_data)
+        
+        # Broadcast to guest-specific connections
+        if guest.id in self.guest_connections:
+            await self._broadcast_to_connections(self.guest_connections[guest.id], event_data)
+    
+    async def broadcast_reservation_created(self, reservation: ReservationResponse, guest_id: int):
+        """Broadcast reservation creation event to guest-specific connections"""
+        event_data = {
+            "type": "reservation_created",
+            "data": reservation.model_dump()
+        }
+        
+        # Broadcast to guest-specific reservation connections
+        if guest_id in self.reservation_connections:
+            await self._broadcast_to_connections(self.reservation_connections[guest_id], event_data)
+    
+    async def broadcast_reservation_updated(self, reservation: ReservationResponse, guest_id: int):
+        """Broadcast reservation update event to guest-specific connections"""
+        event_data = {
+            "type": "reservation_updated",
+            "data": reservation.model_dump()
+        }
+        
+        # Broadcast to guest-specific reservation connections
+        if guest_id in self.reservation_connections:
+            await self._broadcast_to_connections(self.reservation_connections[guest_id], event_data)
+    
+    async def broadcast_reservation_cancelled(self, reservation: ReservationResponse, guest_id: int):
+        """Broadcast reservation cancellation event to guest-specific connections"""
+        event_data = {
+            "type": "reservation_cancelled",
+            "data": reservation.model_dump()
+        }
+        
+        # Broadcast to guest-specific reservation connections
+        if guest_id in self.reservation_connections:
+            await self._broadcast_to_connections(self.reservation_connections[guest_id], event_data)
+    
+    async def _broadcast_to_connections(self, connections: Set[asyncio.Queue], event_data: Dict):
+        """Broadcast event to a set of connections"""
+        if not connections:
+            return
+        
+        # Convert event data to SSE format
+        sse_data = f"data: {json.dumps(event_data)}\n\n"
+        
+        # Send to all connections
+        for queue in connections.copy():
             try:
-                # Send initial connection message
-                yield {
-                    "event": "connected",
-                    "data": json.dumps({
-                        "subscriber_id": subscriber_id,
-                        "message": "Connected to guest updates"
-                    })
-                }
-                
-                # Keep connection alive
-                while subscriber_id in self.guest_subscribers:
-                    await asyncio.sleep(1)
-                    yield {
-                        "event": "ping",
-                        "data": json.dumps({"timestamp": datetime.now().isoformat()})
-                    }
-                    
-            except asyncio.CancelledError:
-                # Clean up when connection is closed
-                self.guest_subscribers.discard(subscriber_id)
-                yield {
-                    "event": "disconnected",
-                    "data": json.dumps({"message": "Disconnected from guest updates"})
-                }
-        
-        return EventSourceResponse(event_generator())
+                await queue.put(sse_data)
+            except Exception as e:
+                logger.error(f"Error broadcasting to connection: {e}")
+                # Remove broken connection
+                connections.discard(queue)
     
-    async def subscribe_to_reservations(self, guest_id: int) -> EventSourceResponse:
+    async def subscribe_to_guests(self):
+        """Subscribe to general guest updates"""
+        queue = asyncio.Queue()
+        await self.add_connection(queue)
+        
+        try:
+            async def event_generator():
+                while True:
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        yield data
+                    except asyncio.TimeoutError:
+                        # Send heartbeat to keep connection alive
+                        yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': '2024-01-01T00:00:00Z'})}\n\n"
+            
+            return EventSourceResponse(event_generator())
+        finally:
+            await self.remove_connection(queue)
+    
+    async def subscribe_to_guest_updates(self, guest_id: int):
+        """Subscribe to updates for a specific guest"""
+        queue = asyncio.Queue()
+        await self.add_guest_connection(guest_id, queue)
+        
+        try:
+            async def event_generator():
+                while True:
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        yield data
+                    except asyncio.TimeoutError:
+                        # Send heartbeat to keep connection alive
+                        yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': '2024-01-01T00:00:00Z'})}\n\n"
+            
+            return EventSourceResponse(event_generator())
+        finally:
+            await self.remove_guest_connection(guest_id, queue)
+    
+    async def subscribe_to_reservations(self, guest_id: int):
         """Subscribe to reservation updates for a specific guest"""
-        subscriber_id = self.generate_subscriber_id()
+        queue = asyncio.Queue()
+        await self.add_reservation_connection(guest_id, queue)
         
-        if guest_id not in self.reservation_subscribers:
-            self.reservation_subscribers[guest_id] = set()
-        self.reservation_subscribers[guest_id].add(subscriber_id)
-        
-        async def event_generator():
-            try:
-                # Send initial connection message
-                yield {
-                    "event": "connected",
-                    "data": json.dumps({
-                        "subscriber_id": subscriber_id,
-                        "guest_id": guest_id,
-                        "message": f"Connected to reservation updates for guest {guest_id}"
-                    })
-                }
-                
-                # Keep connection alive
-                while (guest_id in self.reservation_subscribers and 
-                       subscriber_id in self.reservation_subscribers[guest_id]):
-                    await asyncio.sleep(1)
-                    yield {
-                        "event": "ping",
-                        "data": json.dumps({"timestamp": datetime.now().isoformat()})
-                    }
-                    
-            except asyncio.CancelledError:
-                # Clean up when connection is closed
-                if guest_id in self.reservation_subscribers:
-                    self.reservation_subscribers[guest_id].discard(subscriber_id)
-                    if not self.reservation_subscribers[guest_id]:
-                        del self.reservation_subscribers[guest_id]
-                yield {
-                    "event": "disconnected",
-                    "data": json.dumps({"message": "Disconnected from reservation updates"})
-                }
-        
-        return EventSourceResponse(event_generator())
-    
-    async def notify_guest_created(self, guest: GuestResponse):
-        """Notify all subscribers about a new guest"""
-        if not self.guest_subscribers:
-            return
-        
-        event_data = {
-            "event_type": "guest_created",
-            "guest": guest.model_dump(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # In a real implementation, you would send this to all subscribers
-        # For now, we'll just log it
-        print(f"Guest created event: {event_data}")
-    
-    async def notify_guest_updated(self, guest: GuestResponse):
-        """Notify all subscribers about a guest update"""
-        if not self.guest_subscribers:
-            return
-        
-        event_data = {
-            "event_type": "guest_updated",
-            "guest": guest.model_dump(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # In a real implementation, you would send this to all subscribers
-        # For now, we'll just log it
-        print(f"Guest updated event: {event_data}")
-    
-    async def notify_reservation_created(self, reservation: ReservationWithDetails):
-        """Notify guest subscribers about a new reservation"""
-        guest_id = reservation.guest_id
-        if guest_id not in self.reservation_subscribers:
-            return
-        
-        event_data = {
-            "event_type": "reservation_created",
-            "reservation": reservation.model_dump(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # In a real implementation, you would send this to all subscribers
-        # For now, we'll just log it
-        print(f"Reservation created event for guest {guest_id}: {event_data}")
-    
-    async def notify_reservation_updated(self, reservation: ReservationWithDetails):
-        """Notify guest subscribers about a reservation update"""
-        guest_id = reservation.guest_id
-        if guest_id not in self.reservation_subscribers:
-            return
-        
-        event_data = {
-            "event_type": "reservation_updated",
-            "reservation": reservation.model_dump(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # In a real implementation, you would send this to all subscribers
-        # For now, we'll just log it
-        print(f"Reservation updated event for guest {guest_id}: {event_data}")
-    
-    async def notify_reservation_cancelled(self, reservation: ReservationWithDetails):
-        """Notify guest subscribers about a cancelled reservation"""
-        guest_id = reservation.guest_id
-        if guest_id not in self.reservation_subscribers:
-            return
-        
-        event_data = {
-            "event_type": "reservation_cancelled",
-            "reservation": reservation.model_dump(),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # In a real implementation, you would send this to all subscribers
-        # For now, we'll just log it
-        print(f"Reservation cancelled event for guest {guest_id}: {event_data}")
+        try:
+            async def event_generator():
+                while True:
+                    try:
+                        data = await asyncio.wait_for(queue.get(), timeout=30.0)
+                        yield data
+                    except asyncio.TimeoutError:
+                        # Send heartbeat to keep connection alive
+                        yield f"data: {json.dumps({'type': 'heartbeat', 'timestamp': '2024-01-01T00:00:00Z'})}\n\n"
+            
+            return EventSourceResponse(event_generator())
+        finally:
+            await self.remove_reservation_connection(guest_id, queue)
 
 
 # Global SSE service instance

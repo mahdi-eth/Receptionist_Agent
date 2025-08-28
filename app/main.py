@@ -9,25 +9,14 @@ from app.controllers import guest_router, room_router, reservation_router, chat_
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager"""
     # Startup
-    print("Starting Hotel Receptionist API...")
-    
-    # Create database tables (in production, use Alembic migrations)
-    async with async_engine.begin() as conn:
-        from app.models import Base
-        await conn.run_sync(Base.metadata.create_all)
-    
-    print("Database tables created/verified")
-    print("Hotel Receptionist API started successfully!")
+    from app.database import create_tables
+    await create_tables()
     
     yield
     
     # Shutdown
-    print("Shutting down Hotel Receptionist API...")
     await async_engine.dispose()
-    print("Hotel Receptionist API shutdown complete")
-
 
 # Create FastAPI app
 app = FastAPI(
