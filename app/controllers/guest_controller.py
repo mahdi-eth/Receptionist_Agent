@@ -85,7 +85,15 @@ async def search_guests(
     return await guest_service.search_guests(db, q, skip, limit)
 
 
-@router.get("/sse/updates")
+@router.get("/sse/updates", include_in_schema=True, tags=["SSE - Real-time Updates"])
 async def subscribe_to_guest_updates():
-    """Subscribe to real-time guest updates via Server-Sent Events"""
-    return await sse_service.subscribe_to_guests() 
+    """
+    Subscribe to real-time guest updates via Server-Sent Events
+    
+    This endpoint establishes a Server-Sent Events connection that will send real-time updates
+    whenever guests are created, updated, or deleted.
+    
+    Returns:
+        EventSourceResponse: A streaming response with real-time guest updates
+    """
+    return await sse_service.subscribe_to_guests()

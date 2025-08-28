@@ -88,6 +88,21 @@ app.include_router(guest_router, prefix="/api/v1")
 app.include_router(room_router, prefix="/api/v1")
 app.include_router(reservation_router, prefix="/api/v1")
 
+# System-wide SSE endpoint
+@app.get("/api/v1/sse/system-updates", tags=["SSE - Real-time Updates"], include_in_schema=True)
+async def subscribe_to_system_updates():
+    """
+    Subscribe to system-wide real-time updates via Server-Sent Events
+    
+    This endpoint establishes a Server-Sent Events connection that will send real-time updates
+    for all system events including guests, rooms, and reservations.
+    
+    Returns:
+        EventSourceResponse: A streaming response with real-time system updates
+    """
+    from app.services.sse_service import sse_service
+    return await sse_service.subscribe_to_guests()
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(

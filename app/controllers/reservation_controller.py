@@ -117,7 +117,18 @@ async def get_guest_reservations(
     return await reservation_service.get_guest_reservations(db, guest_id, skip, limit)
 
 
-@router.get("/guest/{guest_id}/sse/updates")
+@router.get("/guest/{guest_id}/sse/updates", include_in_schema=True, tags=["SSE - Real-time Updates"])
 async def subscribe_to_guest_reservation_updates(guest_id: int):
-    """Subscribe to real-time reservation updates for a specific guest via Server-Sent Events"""
-    return await sse_service.subscribe_to_reservations(guest_id) 
+    """
+    Subscribe to real-time reservation updates for a specific guest via Server-Sent Events
+    
+    This endpoint establishes a Server-Sent Events connection that will send real-time updates
+    whenever reservations for the specified guest are created, updated, or cancelled.
+    
+    Args:
+        guest_id (int): The ID of the guest to subscribe to reservation updates for
+        
+    Returns:
+        EventSourceResponse: A streaming response with real-time reservation updates
+    """
+    return await sse_service.subscribe_to_reservations(guest_id)

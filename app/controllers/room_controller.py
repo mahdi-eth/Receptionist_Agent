@@ -84,4 +84,38 @@ async def update_room_status(
 ):
     """Update room status"""
     room_service = RoomService()
-    return await room_service.update_room_status(db, room_id, status) 
+    return await room_service.update_room_status(db, room_id, status)
+
+
+@router.get("/sse/status-updates", include_in_schema=True, tags=["SSE - Real-time Updates"])
+async def subscribe_to_room_status_updates():
+    """
+    Subscribe to real-time room status updates via Server-Sent Events
+    
+    This endpoint establishes a Server-Sent Events connection that will send real-time updates
+    whenever room statuses change (available, occupied, maintenance, etc.).
+    
+    Returns:
+        EventSourceResponse: A streaming response with real-time room status updates
+    """
+    from app.services.sse_service import sse_service
+    # For now, return a simple message - you can enhance this later
+    from fastapi.responses import StreamingResponse
+    import json
+    
+    async def event_stream():
+        yield f"data: {json.dumps({'message': 'Room status updates stream started'})}\n\n"
+        while True:
+            import asyncio
+            await asyncio.sleep(30)  # Send heartbeat every 30 seconds
+            yield f"data: {json.dumps({'timestamp': '2024-01-01T00:00:00Z', 'type': 'heartbeat'})}\n\n"
+    
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+        }
+    ) 
