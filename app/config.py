@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     
     # Application Configuration
     app_name: str = "Hotel Receptionist API"
-    app_version: str = "1.0.0"
+    app_version: str = "0.0.1"
     debug: bool = False
     host: str = "0.0.0.0"
     port: int = 8000

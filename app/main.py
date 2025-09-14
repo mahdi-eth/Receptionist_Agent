@@ -5,42 +5,34 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import async_engine
 from app.controllers import guest_router, room_router, reservation_router, chat_router, streaming_chat_router
-
+from datetime import datetime
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
     from app.database import create_tables
     await create_tables()
-    
     yield
-    
-    # Shutdown
     await async_engine.dispose()
 
-# Create FastAPI app
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
-    description="A professional hotel receptionist management system with real-time updates",
+    description="Hotel receptionist management system with real-time updates",
     docs_url="/docs",
     redoc_url="/redoc",
     lifespan=lifespan
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this properly for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global exception handler
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Global exception handler for unhandled errors"""
     return JSONResponse(
         status_code=500,
         content={
@@ -49,21 +41,17 @@ async def global_exception_handler(request: Request, exc: Exception):
         }
     )
 
-# Health check endpoint
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
     return {
         "status": "healthy",
         "service": settings.app_name,
         "version": settings.app_version,
-        "timestamp": "2024-01-01T00:00:00Z"  # You can use datetime.now().isoformat()
+        "timestamp": datetime.now().isoformat()
     }
 
-# Root endpoint
 @app.get("/")
 async def root():
-    """Root endpoint with API information"""
     return {
         "message": "Welcome to Hotel Receptionist API",
         "service": settings.app_name,
@@ -72,27 +60,16 @@ async def root():
         "health": "/health"
     }
 
-# Include routers
 app.include_router(guest_router, prefix="/api/v1")
 app.include_router(room_router, prefix="/api/v1")
 app.include_router(reservation_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(streaming_chat_router, prefix="/api/v1")
 
-# System-wide SSE endpoint
-@app.get("/api/v1/sse/system-updates", tags=["SSE - Real-time Updates"], include_in_schema=True)
-async def subscribe_to_system_updates():
-    """
-    Subscribe to system-wide real-time updates via Server-Sent Events
-    
-    This endpoint establishes a Server-Sent Events connection that will send real-time updates
-    for all system events including guests, rooms, and reservations.
-    
-    Returns:
-        EventSourceResponse: A streaming response with real-time system updates
-    """
+@app.get("/api/v1/sse/stats", tags=["SSE - Real-time Updates"], include_in_schema=True)
+async def get_sse_stats():
     from app.services.sse_service import sse_service
-    return await sse_service.subscribe_to_guests()
+    return sse_service.get_client_stats()
 
 if __name__ == "__main__":
     import uvicorn

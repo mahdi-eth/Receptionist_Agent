@@ -24,21 +24,13 @@ async def start_chat_session(
     guest_id: Optional[int] = Query(None, description="Guest ID if known"),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Start a new chat session with the hotel receptionist agent
-    
-    This endpoint creates a new chat session and returns the session ID.
-    The guest_id is optional - if provided, the agent will have access to guest information.
-    If not provided, the agent can still help with general inquiries and create new guest profiles.
-    """
+    """Start new chat session with receptionist agent."""
     try:
         chat_service = ChatSessionService()
         
-        # Get client information
         ip_address = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
         
-        # Create chat session
         session = await chat_service.create_chat_session(
             guest_id=guest_id,
             ip_address=ip_address,
@@ -75,23 +67,10 @@ async def send_message(
     chat_request: ChatRequest,
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Send a message to the hotel receptionist agent
-    
-    This endpoint processes user messages and returns the agent's response.
-    The agent can:
-    - Answer questions about hotel services and amenities
-    - Help with room bookings and reservations
-    - Create and update guest profiles
-    - Provide information about room availability
-    - Handle check-in and check-out processes
-    
-    If no session_id is provided, a new session will be created automatically.
-    """
+    """Send message to receptionist agent."""
     try:
         chat_service = ChatSessionService()
         
-        # If no session_id provided, create a new one
         if not chat_request.session_id:
             session = await chat_service.create_chat_session(
                 guest_id=chat_request.guest_id
@@ -100,14 +79,12 @@ async def send_message(
         else:
             session_id = chat_request.session_id
             
-            # Verify session exists and is active
             session = await chat_service.get_chat_session(session_id)
             if not session:
                 raise HTTPException(status_code=404, detail="Chat session not found")
             if session.status != "active":
                 raise HTTPException(status_code=400, detail="Chat session is not active")
         
-        # Process the message
         response = await chat_service.process_user_message(
             session_id, 
             chat_request.message, 
@@ -135,12 +112,7 @@ async def get_chat_session(
     session_id: str,
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Get chat session information and message history
-    
-    This endpoint retrieves the complete chat session including all messages.
-    Useful for displaying chat history or resuming conversations.
-    """
+    """Get chat session with message history."""
     try:
         chat_service = ChatSessionService()
         
@@ -148,19 +120,17 @@ async def get_chat_session(
         if not session:
             raise HTTPException(status_code=404, detail="Chat session not found")
         
-        # Get conversation history
         conversation_history = await chat_service.get_conversation_history(session_id)
         
-        # Convert to response format
         messages = []
         for msg in conversation_history:
             messages.append({
-                "id": 0,  # We don't have individual message IDs in this format
+                "id": 0,
                 "session_id": session.id,
                 "content": msg["content"],
                 "role": msg["role"],
                 "message_type": msg["role"],
-                "timestamp": datetime.now(),  # We don't have individual timestamps in this format
+                "timestamp": datetime.now(),
                 "message_metadata": {}
             })
         
@@ -191,12 +161,7 @@ async def end_chat_session(
     end_request: ChatSessionEnd,
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    End a chat session
-    
-    This endpoint marks a chat session as ended and cleans up resources.
-    The session will no longer accept new messages.
-    """
+    """End chat session."""
     try:
         chat_service = ChatSessionService()
         
@@ -228,12 +193,7 @@ async def get_session_summary(
     session_id: str,
     db: AsyncSession = Depends(get_async_db)
 ):
-    """
-    Get a summary of the chat session
-    
-    This endpoint provides statistics and metadata about the chat session,
-    including message counts, duration, and context information.
-    """
+    """Get chat session summary and statistics."""
     try:
         chat_service = ChatSessionService()
         
@@ -253,12 +213,7 @@ async def get_session_summary(
 
 @router.get("/tools", response_model=list, include_in_schema=True)
 async def get_available_tools():
-    """
-    Get list of available tools for the agent
-    
-    This endpoint returns information about all the tools the AI agent can use
-    to help guests with their requests.
-    """
+    """Get available agent tools."""
     try:
         from app.services.agent_tools_service import AgentToolsService
         tools_service = AgentToolsService()
@@ -268,3 +223,10 @@ async def get_available_tools():
     except Exception as e:
         logger.error(f"Error getting available tools: {e}")
         raise HTTPException(status_code=500, detail="Failed to get available tools") 
+
+
+@router.get("/session/{session_id}/sse", include_in_schema=True, tags=["SSE - Real-time Updates"])
+async def subscribe_to_chat_session_updates(session_id: str):
+    """Subscribe to real-time chat session updates via SSE."""
+    from app.services.sse_service import sse_service
+    return await sse_service.subscribe_to_session_updates(session_id) 
