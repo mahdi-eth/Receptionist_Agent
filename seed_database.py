@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Database seeding script for Hotel Receptionist API
+Database seeding script
 """
 
 import asyncio
