@@ -50,4 +50,14 @@ def get_sync_db():
     try:
         yield db
     finally:
-        db.close() 
+        db.close()
+
+
+async def create_tables():
+    """Create all database tables"""
+    # Import all models to ensure they are registered with Base
+    from app.models import Guest, Room, Reservation, ChatSession, ChatMessage
+    
+    # Create all tables
+    async with async_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all) 

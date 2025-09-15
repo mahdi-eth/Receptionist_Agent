@@ -9,4 +9,8 @@ pydantic-settings==2.1.0
 python-multipart==0.0.6
 sse-starlette==1.6.5
 python-dotenv==1.0.0
-google-generativeai==0.3.2 
+google-generativeai
+langgraph
+langchain
+langchain-google-genai
+websockets

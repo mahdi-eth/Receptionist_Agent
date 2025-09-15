@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hotel Agent WebSocket Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .chat-container {
+            height: 400px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: #fafafa;
+            border-radius: 5px;
+        }
+        .message {
+            margin-bottom: 10px;
+            padding: 8px 12px;
+            border-radius: 8px;
+            max-width: 70%;
+        }
+        .user-message {
+            background-color: #007bff;
+            color: white;
+            margin-left: auto;
+            text-align: right;
+        }
+        .agent-message {
+            background-color: #e9ecef;
+            color: #333;
+        }
+        .status-message {
+            background-color: #fff3cd;
+            color: #856404;
+            font-style: italic;
+            text-align: center;
+            margin: 5px 0;
+        }
+        .error-message {
+            background-color: #f8d7da;
+            color: #721c24;
+            text-align: center;
+        }
+        .input-container {
+            display: flex;
+            gap: 10px;
+        }
+        .input-container input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .input-container button {
+            padding: 10px 20px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .input-container button:hover {
+            background-color: #0056b3;
+        }
+        .input-container button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .session-info {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .guest-form {
+            background-color: #e7f3ff;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        .guest-form h3 {
+            margin-top: 0;
+        }
+        .form-row {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .form-row input {
+            flex: 1;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏨 Hotel Agent WebSocket Client</h1>
+        
+        <!-- Guest Information Form -->
+        <div class="guest-form">
+            <h3>Guest Information (Optional)</h3>
+            <div class="form-row">
+                <input type="text" id="firstName" placeholder="First Name">
+                <input type="text" id="lastName" placeholder="Last Name">
+            </div>
+            <div class="form-row">
+                <input type="email" id="email" placeholder="Email">
+                <input type="tel" id="phone" placeholder="Phone">
+            </div>
+            <div class="form-row">
+                <input type="text" id="city" placeholder="City">
+                <input type="text" id="country" placeholder="Country">
+            </div>
+        </div>
+        
+        <!-- Session Info -->
+        <div id="sessionInfo" class="session-info" style="display: none;">
+            <strong>Session ID:</strong> <span id="sessionId"></span><br>
+            <strong>Status:</strong> <span id="sessionStatus">Disconnected</span>
+        </div>
+        
+        <!-- Chat Container -->
+        <div id="chatContainer" class="chat-container"></div>
+        
+        <!-- Input Container -->
+        <div class="input-container">
+            <input type="text" id="messageInput" placeholder="Type your message..." disabled>
+            <button id="sendButton" onclick="sendMessage()" disabled>Send</button>
+            <button id="connectButton" onclick="connectWebSocket()">Connect</button>
+            <button id="disconnectButton" onclick="disconnectWebSocket()" disabled>Disconnect</button>
+        </div>
+    </div>
+
+    <script>
+        let socket = null;
+        let sessionId = null;
+        
+        function generateSessionId() {
+            return 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+        }
+        
+        function getGuestInfo() {
+            const firstName = document.getElementById('firstName').value.trim();
+            const lastName = document.getElementById('lastName').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const phone = document.getElementById('phone').value.trim();
+            const city = document.getElementById('city').value.trim();
+            const country = document.getElementById('country').value.trim();
+            
+            if (!firstName && !lastName && !email) {
+                return null; // No guest info provided
+            }
+            
+            return {
+                first_name: firstName || null,
+                last_name: lastName || null,
+                email: email || null,
+                phone: phone || null,
+                city: city || null,
+                country: country || null
+            };
+        }
+        
+        function connectWebSocket() {
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                addMessage('system', 'Already connected!', 'error');
+                return;
+            }
+            
+            sessionId = generateSessionId();
+            const wsUrl = `ws://localhost:8000/api/v1/agent/chat/${sessionId}`;
+            
+            socket = new WebSocket(wsUrl);
+            
+            socket.onopen = function(event) {
+                addMessage('system', 'Connected to hotel agent!', 'status');
+                updateSessionInfo(sessionId, 'Connected');
+                updateButtons(true);
+                
+                // Start session with guest info
+                const guestInfo = getGuestInfo();
+                const startMessage = {
+                    type: 'start_session',
+                    guest_info: guestInfo
+                };
+                
+                socket.send(JSON.stringify(startMessage));
+            };
+            
+            socket.onmessage = function(event) {
+                const data = JSON.parse(event.data);
+                handleServerMessage(data);
+            };
+            
+            socket.onclose = function(event) {
+                addMessage('system', 'Disconnected from hotel agent', 'status');
+                updateSessionInfo(sessionId, 'Disconnected');
+                updateButtons(false);
+            };
+            
+            socket.onerror = function(error) {
+                addMessage('system', 'Connection error: ' + error, 'error');
+                updateButtons(false);
+            };
+        }
+        
+        function disconnectWebSocket() {
+            if (socket) {
+                // Send end session message
+                const endMessage = {
+                    type: 'end_session'
+                };
+                socket.send(JSON.stringify(endMessage));
+                
+                socket.close();
+                socket = null;
+                sessionId = null;
+            }
+        }
+        
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (!message || !socket || socket.readyState !== WebSocket.OPEN) {
+                return;
+            }
+            
+            // Add user message to chat
+            addMessage('user', message);
+            
+            // Send to server
+            const messageData = {
+                type: 'user_message',
+                message: message
+            };
+            
+            socket.send(JSON.stringify(messageData));
+            
+            // Clear input
+            input.value = '';
+        }
+        
+        function handleServerMessage(data) {
+            switch (data.type) {
+                case 'session_started':
+                    addMessage('agent', data.message, 'agent');
+                    break;
+                case 'response':
+                    if (data.partial) {
+                        // Handle streaming response
+                        appendToLastMessage(data.content);
+                    } else if (data.complete) {
+                        // Complete response
+                        updateLastMessage(data.content);
+                    }
+                    break;
+                case 'status':
+                    addMessage('system', data.content, 'status');
+                    break;
+                case 'error':
+                    addMessage('system', data.content, 'error');
+                    break;
+                case 'session_ended':
+                    addMessage('system', 'Session ended', 'status');
+                    break;
+                default:
+                    console.log('Unknown message type:', data);
+            }
+        }
+        
+        function addMessage(sender, content, type = 'normal') {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'message';
+            
+            if (sender === 'user') {
+                messageDiv.className += ' user-message';
+            } else if (sender === 'agent') {
+                messageDiv.className += ' agent-message';
+            } else if (type === 'status') {
+                messageDiv.className += ' status-message';
+            } else if (type === 'error') {
+                messageDiv.className += ' error-message';
+            } else {
+                messageDiv.className += ' agent-message';
+            }
+            
+            messageDiv.textContent = content;
+            messageDiv.dataset.sender = sender;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        function appendToLastMessage(content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messages = chatContainer.querySelectorAll('.message');
+            let lastAgentMessage = null;
+            
+            // Find the last agent message
+            for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].dataset.sender === 'agent') {
+                    lastAgentMessage = messages[i];
+                    break;
+                }
+            }
+            
+            if (!lastAgentMessage) {
+                // Create new message if none exists
+                addMessage('agent', content);
+            } else {
+                lastAgentMessage.textContent += content;
+            }
+            
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        function updateLastMessage(content) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messages = chatContainer.querySelectorAll('.message');
+            
+            // Find the last agent message
+            for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].dataset.sender === 'agent') {
+                    messages[i].textContent = content;
+                    break;
+                }
+            }
+            
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+        }
+        
+        function updateSessionInfo(id, status) {
+            document.getElementById('sessionId').textContent = id;
+            document.getElementById('sessionStatus').textContent = status;
+            document.getElementById('sessionInfo').style.display = 'block';
+        }
+        
+        function updateButtons(connected) {
+            document.getElementById('connectButton').disabled = connected;
+            document.getElementById('disconnectButton').disabled = !connected;
+            document.getElementById('sendButton').disabled = !connected;
+            document.getElementById('messageInput').disabled = !connected;
+        }
+        
+        // Handle Enter key in message input
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+        
+        // Initial setup
+        updateButtons(false);
+    </script>
+</body>
+</html> 

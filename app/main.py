@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import async_engine
 from app.controllers import guest_router, room_router, reservation_router, chat_router, streaming_chat_router
+from app.controllers.agent_chat_controller import router as agent_router
 from datetime import datetime
 
 @asynccontextmanager
@@ -65,6 +66,7 @@ app.include_router(room_router, prefix="/api/v1")
 app.include_router(reservation_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(streaming_chat_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
 
 @app.get("/api/v1/sse/stats", tags=["SSE - Real-time Updates"], include_in_schema=True)
 async def get_sse_stats():
